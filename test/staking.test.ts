@@ -1,11 +1,23 @@
 import { expect } from "chai";
 import { loadFixture, mine, time } from "@nomicfoundation/hardhat-network-helpers";
 
-import { prepareEnv, prepareEnvWithoutStakingDeployment } from "./helpers";
+import {
+    prepareEnv,
+    prepareEnvWithoutStakingDeployment,
+    prepareEnvWithoutDonation,
+    prepareEnvWithAliceStake,
+    prepareEnvWithAliceStakeWithoutDonation,
+} from "./helpers";
 import { config } from "../config";
 import { ethers, network } from "hardhat";
 
-import { ONE_DAY, ONE_YEAR, RATE_PRECISION, PERCENT_DENOMINATOR } from "./constants";
+import {
+    ONE_DAY,
+    ONE_YEAR,
+    RATE_PRECISION,
+    PERCENT_DENOMINATOR,
+    COOLING_PERIOD,
+} from "./constants";
 
 describe("Tests of the AtomicStaking contract", () => {
     describe("{constructor}", () => {
@@ -123,47 +135,18 @@ describe("Tests of the AtomicStaking contract", () => {
         });
 
         it("Test two stakes different users", async () => {
-            const env = await loadFixture(prepareEnv);
-
-            // Alice stake
-            const aliceStakeAmount = env.oneToken.mul(1000);
-            expect(aliceStakeAmount).greaterThanOrEqual(
-                env.minStakeAmount,
-                "Too small stake amount"
-            );
-            const aliceStakeTimestamp = env.deployTimestamp + ONE_DAY;
-
-            await env.erc20Inst.connect(env.alice).mint(aliceStakeAmount);
-            await env.erc20Inst
-                .connect(env.alice)
-                .approve(env.stakingInst.address, aliceStakeAmount);
-
-            await time.setNextBlockTimestamp(aliceStakeTimestamp);
-            await expect(env.stakingInst.connect(env.alice).stake(aliceStakeAmount))
-                .emit(env.stakingInst, "TokenStaked")
-                .withArgs(env.alice.address, aliceStakeAmount)
-                .not.emit(env.stakingInst, "RateUpdated")
-                .not.emit(env.stakingInst, "RewardsClaimed");
-
-            expect(await env.erc20Inst.balanceOf(env.stakingInst.address)).equals(
-                aliceStakeAmount.add(env.donatedTokens)
-            );
-
-            const stakeStateAlice = await env.stakingInst.stakeStates(env.alice.address);
-            expect(stakeStateAlice.stakeAmount).equals(aliceStakeAmount);
-            expect(stakeStateAlice.claimedAmount).equals(aliceStakeAmount);
-            expect(stakeStateAlice.contractDeptToUser).equals(0);
+            const env = await loadFixture(prepareEnvWithAliceStake);
 
             // Bob stake
-            const bobStakeAmount = aliceStakeAmount.mul(2);
+            const bobStakeAmount = env.aliceAmountToStake.mul(2);
             expect(bobStakeAmount).greaterThanOrEqual(env.minStakeAmount, "Too small stake amount");
-            const bobStakeTimestamp = aliceStakeTimestamp + ONE_DAY;
+            const bobStakeTimestamp = env.aliceStakeTimestamp + ONE_DAY;
 
             await env.erc20Inst.connect(env.bob).mint(bobStakeAmount);
             await env.erc20Inst.connect(env.bob).approve(env.stakingInst.address, bobStakeAmount);
 
             const newRatePerStaking = RATE_PRECISION.add(
-                RATE_PRECISION.mul(bobStakeTimestamp - aliceStakeTimestamp)
+                RATE_PRECISION.mul(bobStakeTimestamp - env.aliceStakeTimestamp)
                     .mul(env.apr)
                     .div(ONE_YEAR)
                     .div(PERCENT_DENOMINATOR)
@@ -178,7 +161,7 @@ describe("Tests of the AtomicStaking contract", () => {
                 .not.emit(env.stakingInst, "RewardsClaimed");
 
             expect(await env.erc20Inst.balanceOf(env.stakingInst.address)).equals(
-                aliceStakeAmount.add(bobStakeAmount).add(env.donatedTokens)
+                env.aliceAmountToStake.add(bobStakeAmount).add(env.donatedTokens)
             );
 
             const stakeStateBob = await env.stakingInst.stakeStates(env.bob.address);
@@ -190,31 +173,15 @@ describe("Tests of the AtomicStaking contract", () => {
         });
 
         it("Test two stakes one user", async () => {
-            const env = await loadFixture(prepareEnv);
-
-            // Alice first stake
-            const aliceFirstStakeAmount = env.oneToken.mul(1000);
-            expect(aliceFirstStakeAmount).greaterThanOrEqual(
-                env.minStakeAmount,
-                "Too small stake amount"
-            );
-            const aliceFirstStakeTimestamp = env.deployTimestamp + ONE_DAY;
-
-            await env.erc20Inst.connect(env.alice).mint(aliceFirstStakeAmount);
-            await env.erc20Inst
-                .connect(env.alice)
-                .approve(env.stakingInst.address, aliceFirstStakeAmount);
-
-            await time.setNextBlockTimestamp(aliceFirstStakeTimestamp);
-            await env.stakingInst.connect(env.alice).stake(aliceFirstStakeAmount);
+            const env = await loadFixture(prepareEnvWithAliceStake);
 
             // Alice second stake
-            const aliceSecondStakeAmount = aliceFirstStakeAmount.mul(2);
+            const aliceSecondStakeAmount = env.aliceAmountToStake.mul(2);
             expect(aliceSecondStakeAmount).greaterThanOrEqual(
                 env.minStakeAmount,
                 "Too small stake amount"
             );
-            const aliceSecondStakeTimestamp = aliceFirstStakeTimestamp + ONE_DAY;
+            const aliceSecondStakeTimestamp = env.aliceStakeTimestamp + ONE_DAY;
 
             await env.erc20Inst.connect(env.alice).mint(aliceSecondStakeAmount);
             await env.erc20Inst
@@ -222,16 +189,16 @@ describe("Tests of the AtomicStaking contract", () => {
                 .approve(env.stakingInst.address, aliceSecondStakeAmount);
 
             const newRatePerStaking = RATE_PRECISION.add(
-                RATE_PRECISION.mul(aliceSecondStakeTimestamp - aliceFirstStakeTimestamp)
+                RATE_PRECISION.mul(aliceSecondStakeTimestamp - env.aliceStakeTimestamp)
                     .mul(env.apr)
                     .div(ONE_YEAR)
                     .div(PERCENT_DENOMINATOR)
             );
 
-            const claimedRewards = aliceFirstStakeAmount
+            const claimedRewards = env.aliceAmountToStake
                 .mul(newRatePerStaking)
                 .div(RATE_PRECISION)
-                .sub(aliceFirstStakeAmount);
+                .sub(env.aliceAmountToStake);
 
             await time.setNextBlockTimestamp(aliceSecondStakeTimestamp);
             await expect(env.stakingInst.connect(env.alice).stake(aliceSecondStakeAmount))
@@ -243,7 +210,7 @@ describe("Tests of the AtomicStaking contract", () => {
                 .withArgs(env.alice.address, claimedRewards);
 
             expect(await env.erc20Inst.balanceOf(env.stakingInst.address)).equals(
-                aliceFirstStakeAmount
+                env.aliceAmountToStake
                     .add(aliceSecondStakeAmount)
                     .add(env.donatedTokens)
                     .sub(claimedRewards)
@@ -251,10 +218,10 @@ describe("Tests of the AtomicStaking contract", () => {
 
             const stakeStateBob = await env.stakingInst.stakeStates(env.alice.address);
             expect(stakeStateBob.stakeAmount).equals(
-                aliceFirstStakeAmount.add(aliceSecondStakeAmount)
+                env.aliceAmountToStake.add(aliceSecondStakeAmount)
             );
             expect(stakeStateBob.claimedAmount).equals(
-                aliceFirstStakeAmount
+                env.aliceAmountToStake
                     .add(aliceSecondStakeAmount)
                     .mul(newRatePerStaking)
                     .div(RATE_PRECISION)
@@ -276,38 +243,22 @@ describe("Tests of the AtomicStaking contract", () => {
 
     describe("{claimRewards} function", () => {
         it("Claim with enough reward balance", async () => {
-            const env = await loadFixture(prepareEnv);
-
-            // First stake
-            const firstStakeAmount = env.oneToken.mul(1000);
-            expect(firstStakeAmount).greaterThanOrEqual(
-                env.minStakeAmount,
-                "Too small stake amount"
-            );
-            const firstAliceStakeTimestamp = env.deployTimestamp + ONE_DAY;
-
-            await env.erc20Inst.connect(env.alice).mint(firstStakeAmount);
-            await env.erc20Inst
-                .connect(env.alice)
-                .approve(env.stakingInst.address, firstStakeAmount);
-
-            await time.setNextBlockTimestamp(firstAliceStakeTimestamp);
-            await env.stakingInst.connect(env.alice).stake(firstStakeAmount);
+            const env = await loadFixture(prepareEnvWithAliceStake);
 
             // Claim
-            const claimTimestamp = firstAliceStakeTimestamp + ONE_DAY;
+            const claimTimestamp = env.aliceStakeTimestamp + ONE_DAY;
 
             const newRatePerStaking = RATE_PRECISION.add(
-                RATE_PRECISION.mul(claimTimestamp - firstAliceStakeTimestamp)
+                RATE_PRECISION.mul(claimTimestamp - env.aliceStakeTimestamp)
                     .mul(env.apr)
                     .div(ONE_YEAR)
                     .div(PERCENT_DENOMINATOR)
             );
 
-            const claimedRewards = firstStakeAmount
+            const claimedRewards = env.aliceAmountToStake
                 .mul(newRatePerStaking)
                 .div(RATE_PRECISION)
-                .sub(firstStakeAmount);
+                .sub(env.aliceAmountToStake);
 
             await time.setNextBlockTimestamp(claimTimestamp);
             await expect(env.stakingInst.connect(env.alice).claimRewards())
@@ -319,54 +270,37 @@ describe("Tests of the AtomicStaking contract", () => {
             expect(await env.erc20Inst.balanceOf(env.alice.address)).equals(claimedRewards);
 
             expect(await env.erc20Inst.balanceOf(env.stakingInst.address)).equals(
-                firstStakeAmount.add(env.donatedTokens).sub(claimedRewards)
+                env.aliceAmountToStake.add(env.donatedTokens).sub(claimedRewards)
             );
 
             const secondStakeState = await env.stakingInst.stakeStates(env.alice.address);
-            expect(secondStakeState.stakeAmount).equals(firstStakeAmount);
+            expect(secondStakeState.stakeAmount).equals(env.aliceAmountToStake);
             expect(secondStakeState.claimedAmount).equals(
-                firstStakeAmount.mul(newRatePerStaking).div(RATE_PRECISION)
+                env.aliceAmountToStake.mul(newRatePerStaking).div(RATE_PRECISION)
             );
             expect(secondStakeState.contractDeptToUser).equals(0);
         });
 
         it("Claim with almost enough reward balance", async () => {
-            const env = await loadFixture(prepareEnv);
-
-            await env.stakingInst.receiveExcessiveBalance(ethers.constants.MaxUint256);
-
-            // First stake
-            const firstStakeAmount = env.oneToken.mul(1000);
-            expect(firstStakeAmount).greaterThanOrEqual(
-                env.minStakeAmount,
-                "Too small stake amount"
-            );
-            const firstAliceStakeTimestamp = env.deployTimestamp + ONE_DAY;
-
-            await env.erc20Inst.connect(env.alice).mint(firstStakeAmount);
-            await env.erc20Inst
-                .connect(env.alice)
-                .approve(env.stakingInst.address, firstStakeAmount);
-
-            await time.setNextBlockTimestamp(firstAliceStakeTimestamp);
-            await env.stakingInst.connect(env.alice).stake(firstStakeAmount);
+            const env = await loadFixture(prepareEnvWithAliceStakeWithoutDonation);
 
             // Claim
-            const claimTimestamp = firstAliceStakeTimestamp + ONE_DAY;
+            const claimTimestamp = env.aliceStakeTimestamp + ONE_DAY;
 
             const newRatePerStaking = RATE_PRECISION.add(
-                RATE_PRECISION.mul(claimTimestamp - firstAliceStakeTimestamp)
+                RATE_PRECISION.mul(claimTimestamp - env.aliceStakeTimestamp)
                     .mul(env.apr)
                     .div(ONE_YEAR)
                     .div(PERCENT_DENOMINATOR)
             );
 
-            const claimedRewards = firstStakeAmount
+            const claimedRewards = env.aliceAmountToStake
                 .mul(newRatePerStaking)
                 .div(RATE_PRECISION)
-                .sub(firstStakeAmount);
+                .sub(env.aliceAmountToStake);
 
             const tokenToDonate = claimedRewards.div(3);
+            await env.erc20Inst.mint(tokenToDonate);
             await env.erc20Inst.approve(env.stakingInst.address, tokenToDonate);
             await env.stakingInst.donateTokensToRewards(tokenToDonate);
 
@@ -381,51 +315,35 @@ describe("Tests of the AtomicStaking contract", () => {
 
             expect(await env.erc20Inst.balanceOf(env.alice.address)).equals(tokenToDonate);
 
-            expect(await env.erc20Inst.balanceOf(env.stakingInst.address)).equals(firstStakeAmount);
+            expect(await env.erc20Inst.balanceOf(env.stakingInst.address)).equals(
+                env.aliceAmountToStake
+            );
 
             const secondStakeState = await env.stakingInst.stakeStates(env.alice.address);
-            expect(secondStakeState.stakeAmount).equals(firstStakeAmount);
+            expect(secondStakeState.stakeAmount).equals(env.aliceAmountToStake);
             expect(secondStakeState.claimedAmount).equals(
-                firstStakeAmount.mul(newRatePerStaking).div(RATE_PRECISION)
+                env.aliceAmountToStake.mul(newRatePerStaking).div(RATE_PRECISION)
             );
             expect(secondStakeState.contractDeptToUser).equals(claimedRewards.sub(tokenToDonate));
         });
 
         it("Claim with no reward balance", async () => {
-            const env = await loadFixture(prepareEnv);
-
-            await env.stakingInst.receiveExcessiveBalance(ethers.constants.MaxUint256);
-
-            // First stake
-            const firstStakeAmount = env.oneToken.mul(1000);
-            expect(firstStakeAmount).greaterThanOrEqual(
-                env.minStakeAmount,
-                "Too small stake amount"
-            );
-            const firstAliceStakeTimestamp = env.deployTimestamp + ONE_DAY;
-
-            await env.erc20Inst.connect(env.alice).mint(firstStakeAmount);
-            await env.erc20Inst
-                .connect(env.alice)
-                .approve(env.stakingInst.address, firstStakeAmount);
-
-            await time.setNextBlockTimestamp(firstAliceStakeTimestamp);
-            await env.stakingInst.connect(env.alice).stake(firstStakeAmount);
+            const env = await loadFixture(prepareEnvWithAliceStakeWithoutDonation);
 
             // Claim rewards
-            const claimTimestamp = firstAliceStakeTimestamp + ONE_DAY;
+            const claimTimestamp = env.aliceStakeTimestamp + ONE_DAY;
 
             const newRatePerStaking = RATE_PRECISION.add(
-                RATE_PRECISION.mul(claimTimestamp - firstAliceStakeTimestamp)
+                RATE_PRECISION.mul(claimTimestamp - env.aliceStakeTimestamp)
                     .mul(env.apr)
                     .div(ONE_YEAR)
                     .div(PERCENT_DENOMINATOR)
             );
 
-            const claimedRewards = firstStakeAmount
+            const claimedRewards = env.aliceAmountToStake
                 .mul(newRatePerStaking)
                 .div(RATE_PRECISION)
-                .sub(firstStakeAmount);
+                .sub(env.aliceAmountToStake);
 
             await time.setNextBlockTimestamp(claimTimestamp);
             await expect(env.stakingInst.connect(env.alice).claimRewards())
@@ -437,43 +355,27 @@ describe("Tests of the AtomicStaking contract", () => {
 
             expect(await env.erc20Inst.balanceOf(env.alice.address)).equals(0);
 
-            expect(await env.erc20Inst.balanceOf(env.stakingInst.address)).equals(firstStakeAmount);
+            expect(await env.erc20Inst.balanceOf(env.stakingInst.address)).equals(
+                env.aliceAmountToStake
+            );
 
             const aliceStakeState = await env.stakingInst.stakeStates(env.alice.address);
-            expect(aliceStakeState.stakeAmount).equals(firstStakeAmount);
+            expect(aliceStakeState.stakeAmount).equals(env.aliceAmountToStake);
             expect(aliceStakeState.claimedAmount).equals(
-                firstStakeAmount.mul(newRatePerStaking).div(RATE_PRECISION)
+                env.aliceAmountToStake.mul(newRatePerStaking).div(RATE_PRECISION)
             );
             expect(aliceStakeState.contractDeptToUser).equals(claimedRewards);
         });
 
         describe("After first claim with no reward balance", () => {
             it("Second claim with no reward balance", async () => {
-                const env = await loadFixture(prepareEnv);
+                const env = await loadFixture(prepareEnvWithAliceStakeWithoutDonation);
 
-                await env.stakingInst.receiveExcessiveBalance(ethers.constants.MaxUint256);
-
-                // First stake
-                const firstStakeAmount = env.oneToken.mul(1000);
-                expect(firstStakeAmount).greaterThanOrEqual(
-                    env.minStakeAmount,
-                    "Too small stake amount"
-                );
-                const firstAliceStakeTimestamp = env.deployTimestamp + ONE_DAY;
-
-                const firstClaimTimestamp = firstAliceStakeTimestamp + ONE_DAY;
+                const firstClaimTimestamp = env.aliceStakeTimestamp + ONE_DAY;
                 const secondClaimTimestamp = firstClaimTimestamp + ONE_DAY * 2;
 
-                await env.erc20Inst.connect(env.alice).mint(firstStakeAmount);
-                await env.erc20Inst
-                    .connect(env.alice)
-                    .approve(env.stakingInst.address, firstStakeAmount);
-
-                await time.setNextBlockTimestamp(firstAliceStakeTimestamp);
-                await env.stakingInst.connect(env.alice).stake(firstStakeAmount);
-
                 const secondRatePerStaking = RATE_PRECISION.add(
-                    RATE_PRECISION.mul(firstClaimTimestamp - firstAliceStakeTimestamp)
+                    RATE_PRECISION.mul(firstClaimTimestamp - env.aliceStakeTimestamp)
                         .mul(env.apr)
                         .div(ONE_YEAR)
                         .div(PERCENT_DENOMINATOR)
@@ -486,15 +388,15 @@ describe("Tests of the AtomicStaking contract", () => {
                         .div(PERCENT_DENOMINATOR)
                 );
 
-                const secondClaimedRewards = firstStakeAmount
+                const secondClaimedRewards = env.aliceAmountToStake
                     .mul(secondRatePerStaking)
                     .div(RATE_PRECISION)
-                    .sub(firstStakeAmount);
+                    .sub(env.aliceAmountToStake);
 
-                const secondClaimedAmount = firstStakeAmount
+                const secondClaimedAmount = env.aliceAmountToStake
                     .mul(secondRatePerStaking)
                     .div(RATE_PRECISION);
-                const thirdClaimedRewards = firstStakeAmount
+                const thirdClaimedRewards = env.aliceAmountToStake
                     .mul(thirdRatePerStaking)
                     .div(RATE_PRECISION)
                     .sub(secondClaimedAmount);
@@ -516,13 +418,13 @@ describe("Tests of the AtomicStaking contract", () => {
                 expect(await env.erc20Inst.balanceOf(env.alice.address)).equals(0);
 
                 expect(await env.erc20Inst.balanceOf(env.stakingInst.address)).equals(
-                    firstStakeAmount
+                    env.aliceAmountToStake
                 );
 
                 const thirdStakeState = await env.stakingInst.stakeStates(env.alice.address);
-                expect(thirdStakeState.stakeAmount).equals(firstStakeAmount);
+                expect(thirdStakeState.stakeAmount).equals(env.aliceAmountToStake);
                 expect(thirdStakeState.claimedAmount).equals(
-                    firstStakeAmount.mul(thirdRatePerStaking).div(RATE_PRECISION)
+                    env.aliceAmountToStake.mul(thirdRatePerStaking).div(RATE_PRECISION)
                 );
                 expect(thirdStakeState.contractDeptToUser).equals(
                     secondClaimedRewards.add(thirdClaimedRewards)
@@ -530,31 +432,13 @@ describe("Tests of the AtomicStaking contract", () => {
             });
 
             it("Second claim with enough rewards balance", async () => {
-                const env = await loadFixture(prepareEnv);
+                const env = await loadFixture(prepareEnvWithAliceStakeWithoutDonation);
 
-                await env.stakingInst.receiveExcessiveBalance(ethers.constants.MaxUint256);
-
-                // First stake
-                const firstStakeAmount = env.oneToken.mul(1000);
-                expect(firstStakeAmount).greaterThanOrEqual(
-                    env.minStakeAmount,
-                    "Too small stake amount"
-                );
-                const firstAliceStakeTimestamp = env.deployTimestamp + ONE_DAY;
-
-                const firstClaimTimestamp = firstAliceStakeTimestamp + ONE_DAY;
+                const firstClaimTimestamp = env.aliceStakeTimestamp + ONE_DAY;
                 const secondClaimTimestamp = firstClaimTimestamp + ONE_DAY * 2;
 
-                await env.erc20Inst.connect(env.alice).mint(firstStakeAmount);
-                await env.erc20Inst
-                    .connect(env.alice)
-                    .approve(env.stakingInst.address, firstStakeAmount);
-
-                await time.setNextBlockTimestamp(firstAliceStakeTimestamp);
-                await env.stakingInst.connect(env.alice).stake(firstStakeAmount);
-
                 const secondRatePerStaking = RATE_PRECISION.add(
-                    RATE_PRECISION.mul(firstClaimTimestamp - firstAliceStakeTimestamp)
+                    RATE_PRECISION.mul(firstClaimTimestamp - env.aliceStakeTimestamp)
                         .mul(env.apr)
                         .div(ONE_YEAR)
                         .div(PERCENT_DENOMINATOR)
@@ -567,15 +451,15 @@ describe("Tests of the AtomicStaking contract", () => {
                         .div(PERCENT_DENOMINATOR)
                 );
 
-                const secondClaimedRewards = firstStakeAmount
+                const secondClaimedRewards = env.aliceAmountToStake
                     .mul(secondRatePerStaking)
                     .div(RATE_PRECISION)
-                    .sub(firstStakeAmount);
+                    .sub(env.aliceAmountToStake);
 
-                const secondClaimedAmount = firstStakeAmount
+                const secondClaimedAmount = env.aliceAmountToStake
                     .mul(secondRatePerStaking)
                     .div(RATE_PRECISION);
-                const thirdClaimedRewards = firstStakeAmount
+                const thirdClaimedRewards = env.aliceAmountToStake
                     .mul(thirdRatePerStaking)
                     .div(RATE_PRECISION)
                     .sub(secondClaimedAmount);
@@ -583,10 +467,13 @@ describe("Tests of the AtomicStaking contract", () => {
                 await time.setNextBlockTimestamp(firstClaimTimestamp);
                 await env.stakingInst.connect(env.alice).claimRewards();
 
+                const donatedTokens = env.oneToken.mul(1000);
                 await time.setNextBlockTimestamp(firstClaimTimestamp);
-                await env.erc20Inst.approve(env.stakingInst.address, env.donatedTokens);
+                await env.erc20Inst.mint(donatedTokens);
                 await time.setNextBlockTimestamp(firstClaimTimestamp);
-                await env.stakingInst.donateTokensToRewards(env.donatedTokens);
+                await env.erc20Inst.approve(env.stakingInst.address, donatedTokens);
+                await time.setNextBlockTimestamp(firstClaimTimestamp);
+                await env.stakingInst.donateTokensToRewards(donatedTokens);
 
                 await time.setNextBlockTimestamp(secondClaimTimestamp);
                 await expect(env.stakingInst.connect(env.alice).claimRewards())
@@ -602,45 +489,27 @@ describe("Tests of the AtomicStaking contract", () => {
                 );
 
                 expect(await env.erc20Inst.balanceOf(env.stakingInst.address)).equals(
-                    firstStakeAmount
-                        .add(env.donatedTokens)
+                    env.aliceAmountToStake
+                        .add(donatedTokens)
                         .sub(secondClaimedRewards.add(thirdClaimedRewards))
                 );
 
                 const thirdStakeState = await env.stakingInst.stakeStates(env.alice.address);
-                expect(thirdStakeState.stakeAmount).equals(firstStakeAmount);
+                expect(thirdStakeState.stakeAmount).equals(env.aliceAmountToStake);
                 expect(thirdStakeState.claimedAmount).equals(
-                    firstStakeAmount.mul(thirdRatePerStaking).div(RATE_PRECISION)
+                    env.aliceAmountToStake.mul(thirdRatePerStaking).div(RATE_PRECISION)
                 );
                 expect(thirdStakeState.contractDeptToUser).equals(0);
             });
 
             it("Second claim with enough rewards balance only for [second stake timestamp; third stake timestamp]", async () => {
-                const env = await loadFixture(prepareEnv);
+                const env = await loadFixture(prepareEnvWithAliceStakeWithoutDonation);
 
-                await env.stakingInst.receiveExcessiveBalance(ethers.constants.MaxUint256);
-
-                // First stake
-                const firstStakeAmount = env.oneToken.mul(1000);
-                expect(firstStakeAmount).greaterThanOrEqual(
-                    env.minStakeAmount,
-                    "Too small stake amount"
-                );
-                const firstAliceStakeTimestamp = env.deployTimestamp + ONE_DAY;
-
-                const firstClaimTimestamp = firstAliceStakeTimestamp + ONE_DAY;
+                const firstClaimTimestamp = env.aliceStakeTimestamp + ONE_DAY;
                 const secondClaimTimestamp = firstClaimTimestamp + ONE_DAY * 2;
 
-                await env.erc20Inst.connect(env.alice).mint(firstStakeAmount);
-                await env.erc20Inst
-                    .connect(env.alice)
-                    .approve(env.stakingInst.address, firstStakeAmount);
-
-                await time.setNextBlockTimestamp(firstAliceStakeTimestamp);
-                await env.stakingInst.connect(env.alice).stake(firstStakeAmount);
-
                 const secondRatePerStaking = RATE_PRECISION.add(
-                    RATE_PRECISION.mul(firstClaimTimestamp - firstAliceStakeTimestamp)
+                    RATE_PRECISION.mul(firstClaimTimestamp - env.aliceStakeTimestamp)
                         .mul(env.apr)
                         .div(ONE_YEAR)
                         .div(PERCENT_DENOMINATOR)
@@ -653,15 +522,15 @@ describe("Tests of the AtomicStaking contract", () => {
                         .div(PERCENT_DENOMINATOR)
                 );
 
-                const secondClaimedRewards = firstStakeAmount
+                const secondClaimedRewards = env.aliceAmountToStake
                     .mul(secondRatePerStaking)
                     .div(RATE_PRECISION)
-                    .sub(firstStakeAmount);
+                    .sub(env.aliceAmountToStake);
 
-                const secondClaimedAmount = firstStakeAmount
+                const secondClaimedAmount = env.aliceAmountToStake
                     .mul(secondRatePerStaking)
                     .div(RATE_PRECISION);
-                const thirdClaimedRewards = firstStakeAmount
+                const thirdClaimedRewards = env.aliceAmountToStake
                     .mul(thirdRatePerStaking)
                     .div(RATE_PRECISION)
                     .sub(secondClaimedAmount);
@@ -669,6 +538,8 @@ describe("Tests of the AtomicStaking contract", () => {
                 await time.setNextBlockTimestamp(firstClaimTimestamp);
                 await env.stakingInst.connect(env.alice).claimRewards();
 
+                await time.setNextBlockTimestamp(firstClaimTimestamp);
+                await env.erc20Inst.mint(thirdClaimedRewards);
                 await time.setNextBlockTimestamp(firstClaimTimestamp);
                 await env.erc20Inst.approve(env.stakingInst.address, thirdClaimedRewards);
                 await time.setNextBlockTimestamp(firstClaimTimestamp);
@@ -687,51 +558,33 @@ describe("Tests of the AtomicStaking contract", () => {
                 );
 
                 expect(await env.erc20Inst.balanceOf(env.stakingInst.address)).equals(
-                    firstStakeAmount
+                    env.aliceAmountToStake
                 );
 
                 const thirdStakeState = await env.stakingInst.stakeStates(env.alice.address);
-                expect(thirdStakeState.stakeAmount).equals(firstStakeAmount);
+                expect(thirdStakeState.stakeAmount).equals(env.aliceAmountToStake);
                 expect(thirdStakeState.claimedAmount).equals(
-                    firstStakeAmount.mul(thirdRatePerStaking).div(RATE_PRECISION)
+                    env.aliceAmountToStake.mul(thirdRatePerStaking).div(RATE_PRECISION)
                 );
                 expect(thirdStakeState.contractDeptToUser).equals(secondClaimedRewards);
             });
 
             it("Second claim with the same timestamp as the second claim", async () => {
-                const env = await loadFixture(prepareEnv);
+                const env = await loadFixture(prepareEnvWithAliceStakeWithoutDonation);
 
-                await env.stakingInst.receiveExcessiveBalance(ethers.constants.MaxUint256);
-
-                // First stake
-                const firstStakeAmount = env.oneToken.mul(1000);
-                expect(firstStakeAmount).greaterThanOrEqual(
-                    env.minStakeAmount,
-                    "Too small stake amount"
-                );
-                const firstAliceStakeTimestamp = env.deployTimestamp + ONE_DAY;
-
-                const firstClaimTimestamp = firstAliceStakeTimestamp + ONE_DAY;
-
-                await env.erc20Inst.connect(env.alice).mint(firstStakeAmount);
-                await env.erc20Inst
-                    .connect(env.alice)
-                    .approve(env.stakingInst.address, firstStakeAmount);
-
-                await time.setNextBlockTimestamp(firstAliceStakeTimestamp);
-                await env.stakingInst.connect(env.alice).stake(firstStakeAmount);
+                const firstClaimTimestamp = env.aliceStakeTimestamp + ONE_DAY;
 
                 const newRatePerStaking = RATE_PRECISION.add(
-                    RATE_PRECISION.mul(firstClaimTimestamp - firstAliceStakeTimestamp)
+                    RATE_PRECISION.mul(firstClaimTimestamp - env.aliceStakeTimestamp)
                         .mul(env.apr)
                         .div(ONE_YEAR)
                         .div(PERCENT_DENOMINATOR)
                 );
 
-                const claimedRewards = firstStakeAmount
+                const claimedRewards = env.aliceAmountToStake
                     .mul(newRatePerStaking)
                     .div(RATE_PRECISION)
-                    .sub(firstStakeAmount);
+                    .sub(env.aliceAmountToStake);
 
                 await time.setNextBlockTimestamp(firstClaimTimestamp);
                 await env.stakingInst.connect(env.alice).claimRewards();
@@ -744,33 +597,238 @@ describe("Tests of the AtomicStaking contract", () => {
                 expect(await env.erc20Inst.balanceOf(env.alice.address)).equals(0);
 
                 expect(await env.erc20Inst.balanceOf(env.stakingInst.address)).equals(
-                    firstStakeAmount
+                    env.aliceAmountToStake
                 );
 
                 const thirdStakeState = await env.stakingInst.stakeStates(env.alice.address);
-                expect(thirdStakeState.stakeAmount).equals(firstStakeAmount);
+                expect(thirdStakeState.stakeAmount).equals(env.aliceAmountToStake);
                 expect(thirdStakeState.claimedAmount).equals(
-                    firstStakeAmount.mul(newRatePerStaking).div(RATE_PRECISION)
+                    env.aliceAmountToStake.mul(newRatePerStaking).div(RATE_PRECISION)
                 );
                 expect(thirdStakeState.contractDeptToUser).equals(claimedRewards);
             });
         });
     });
 
+    describe("{requestWithdraw} function", () => {
+        it("Two withdrawals different users", async () => {
+            const env = await loadFixture(prepareEnvWithAliceStake);
+
+            const bobStakeTimestamp = env.aliceStakeTimestamp + ONE_DAY * 2;
+            const bobAmountToStake = env.oneToken.mul(1000);
+            await env.erc20Inst.connect(env.bob).mint(bobAmountToStake);
+            await env.erc20Inst.connect(env.bob).approve(env.stakingInst.address, bobAmountToStake);
+            await time.setNextBlockTimestamp(bobStakeTimestamp);
+            await env.stakingInst.connect(env.bob).stake(bobAmountToStake);
+
+            const aliceWithdrawTimestamp = bobStakeTimestamp + ONE_DAY * 2;
+            const aliceWithdrawAmount = env.aliceAmountToStake.div(3);
+
+            const bobStakeRatePerStaking = RATE_PRECISION.add(
+                RATE_PRECISION.mul(bobStakeTimestamp - env.aliceStakeTimestamp)
+                    .mul(env.apr)
+                    .div(ONE_YEAR * PERCENT_DENOMINATOR)
+            );
+            const aliceWithdrawRatePerStaking = bobStakeRatePerStaking.add(
+                bobStakeRatePerStaking
+                    .mul(aliceWithdrawTimestamp - bobStakeTimestamp)
+                    .mul(env.apr)
+                    .div(ONE_YEAR * PERCENT_DENOMINATOR)
+            );
+            const aliceClaimedAmount = env.aliceAmountToStake
+                .sub(aliceWithdrawAmount)
+                .mul(aliceWithdrawRatePerStaking)
+                .div(RATE_PRECISION);
+
+            const aliceWithdrawId = await env.stakingInst
+                .connect(env.alice)
+                .callStatic.requestWithdraw(aliceWithdrawAmount);
+            expect(aliceWithdrawId).equals(1);
+
+            await time.setNextBlockTimestamp(aliceWithdrawTimestamp);
+            await expect(env.stakingInst.connect(env.alice).requestWithdraw(aliceWithdrawAmount))
+                .emit(env.stakingInst, "WithdrawRequested")
+                .withArgs(env.alice.address, aliceWithdrawAmount, 1);
+
+            const aliceWithdrawState = await env.stakingInst.withdrawStates(1);
+            expect(aliceWithdrawState.user).equals(env.alice.address);
+            expect(aliceWithdrawState.amount).equals(aliceWithdrawAmount);
+            expect(aliceWithdrawState.withdrawTimestamp).equals(aliceWithdrawTimestamp);
+
+            const aliceStakeState = await env.stakingInst.stakeStates(env.alice.address);
+            expect(aliceStakeState.stakeAmount).equals(
+                env.aliceAmountToStake.sub(aliceWithdrawAmount)
+            );
+            expect(aliceStakeState.claimedAmount).equals(aliceClaimedAmount);
+            expect(aliceStakeState.contractDeptToUser).equals(0);
+
+            const bobWithdrawTimestamp = aliceWithdrawTimestamp + ONE_DAY * 3;
+            const bobWithdrawAmount = bobAmountToStake.div(2);
+            const bobWithdrawRatePerStaking = aliceWithdrawRatePerStaking.add(
+                aliceWithdrawRatePerStaking
+                    .mul(bobWithdrawTimestamp - aliceWithdrawTimestamp)
+                    .mul(env.apr)
+                    .div(ONE_YEAR * PERCENT_DENOMINATOR)
+            );
+            const bobClaimedAmount = bobAmountToStake
+                .sub(bobWithdrawAmount)
+                .mul(bobWithdrawRatePerStaking)
+                .div(RATE_PRECISION);
+
+            const bobWithdrawId = await env.stakingInst
+                .connect(env.bob)
+                .callStatic.requestWithdraw(bobWithdrawAmount);
+            expect(bobWithdrawId).equals(2);
+
+            await time.setNextBlockTimestamp(bobWithdrawTimestamp);
+            await expect(env.stakingInst.connect(env.bob).requestWithdraw(bobWithdrawAmount))
+                .emit(env.stakingInst, "WithdrawRequested")
+                .withArgs(env.bob.address, bobWithdrawAmount, 2);
+
+            const bobWithdrawState = await env.stakingInst.withdrawStates(2);
+            expect(bobWithdrawState.user).equals(env.bob.address);
+            expect(bobWithdrawState.amount).equals(bobWithdrawAmount);
+            expect(bobWithdrawState.withdrawTimestamp).equals(bobWithdrawTimestamp);
+
+            const bobStakeState = await env.stakingInst.stakeStates(env.bob.address);
+            expect(bobStakeState.stakeAmount).equals(bobAmountToStake.sub(bobWithdrawAmount));
+            expect(bobStakeState.claimedAmount).equals(bobClaimedAmount);
+            expect(bobStakeState.contractDeptToUser).equals(0);
+        });
+
+        it("Test rewards", async () => {
+            const env = await loadFixture(prepareEnvWithAliceStake);
+
+            const balanceBefore = await env.erc20Inst.balanceOf(env.alice.address);
+
+            const withdrawRequestTime = env.aliceStakeTimestamp + ONE_DAY * 2;
+            await time.setNextBlockTimestamp(withdrawRequestTime);
+            await mine();
+            const availableRewardsToClaim = await env.stakingInst.availableRewardsToClaim(
+                env.alice.address
+            );
+            await time.setNextBlockTimestamp(withdrawRequestTime);
+            await env.stakingInst.connect(env.alice).requestWithdraw(env.aliceAmountToStake);
+
+            const balanceAfter = await env.erc20Inst.balanceOf(env.alice.address);
+            expect(balanceAfter.sub(balanceBefore)).equals(availableRewardsToClaim);
+        });
+
+        it("User's withdraw doesn't go to rewards to other users", async () => {
+            const env = await loadFixture(prepareEnvWithAliceStakeWithoutDonation);
+
+            const bobAmountToStake = env.aliceAmountToStake.mul(2);
+            const bobStakeTimestamp = env.aliceStakeTimestamp + ONE_DAY * 3;
+            await env.erc20Inst.connect(env.bob).mint(bobAmountToStake);
+            await env.erc20Inst.connect(env.bob).approve(env.stakingInst.address, bobAmountToStake);
+            await time.setNextBlockTimestamp(bobStakeTimestamp);
+            await env.stakingInst.connect(env.bob).stake(bobAmountToStake);
+
+            const aliceWithdrawTimestamp = bobStakeTimestamp + ONE_DAY * 5;
+
+            await time.setNextBlockTimestamp(aliceWithdrawTimestamp);
+            await mine();
+            expect(await env.stakingInst.availableRewardsToClaim(env.bob.address)).equals(0);
+
+            await time.setNextBlockTimestamp(aliceWithdrawTimestamp);
+            await env.stakingInst.connect(env.alice).requestWithdraw(env.aliceAmountToStake);
+
+            expect(await env.stakingInst.availableRewardsToClaim(env.bob.address)).equals(0);
+        });
+
+        describe("Revert", () => {
+            it("Should revert if amount is zero", async () => {
+                const env = await loadFixture(prepareEnv);
+
+                await expect(env.stakingInst.requestWithdraw(0)).revertedWithCustomError(
+                    env.stakingInst,
+                    "ZeroValue"
+                );
+            });
+
+            it("Should revert if amount is bigger than stake", async () => {
+                const env = await loadFixture(prepareEnvWithAliceStake);
+
+                await expect(env.stakingInst.requestWithdraw(1))
+                    .revertedWithCustomError(env.stakingInst, "TooBigValue")
+                    .withArgs(1, 0);
+
+                await expect(
+                    env.stakingInst
+                        .connect(env.alice)
+                        .requestWithdraw(env.aliceAmountToStake.add(1))
+                )
+                    .revertedWithCustomError(env.stakingInst, "TooBigValue")
+                    .withArgs(env.aliceAmountToStake.add(1), env.aliceAmountToStake);
+            });
+        });
+    });
+
+    describe("{finalizeWithdraw} function", () => {
+        it("Test", async () => {
+            const env = await loadFixture(prepareEnvWithAliceStake);
+
+            const aliceWithdrawAmount = env.aliceAmountToStake.div(3);
+            const aliceRequestWithdrawTimestamp = env.aliceStakeTimestamp + ONE_DAY * 3;
+            await time.setNextBlockTimestamp(aliceRequestWithdrawTimestamp);
+            await env.stakingInst.connect(env.alice).requestWithdraw(aliceWithdrawAmount);
+
+            const balanceBefore = await env.erc20Inst.balanceOf(env.stakingInst.address);
+
+            await time.setNextBlockTimestamp(aliceRequestWithdrawTimestamp + COOLING_PERIOD);
+            await expect(env.stakingInst.connect(env.alice).finalizeWithdraw(1))
+                .emit(env.stakingInst, "WithdrawIdFinalized")
+                .withArgs(env.alice.address, aliceWithdrawAmount, 1);
+
+            const balanceAfter = await env.erc20Inst.balanceOf(env.stakingInst.address);
+            expect(balanceBefore.sub(balanceAfter)).equals(aliceWithdrawAmount);
+        });
+
+        describe("Revert", () => {
+            it("Should revert when withdraw id doesn't exists", async () => {
+                const env = await loadFixture(prepareEnvWithoutDonation);
+
+                await expect(env.stakingInst.finalizeWithdraw(10))
+                    .revertedWithCustomError(env.stakingInst, "NoSuchWithdrawId")
+                    .withArgs(10);
+            });
+
+            it("Should revert when not allowed user", async () => {
+                const env = await loadFixture(prepareEnvWithAliceStakeWithoutDonation);
+
+                const aliceRequestWithdrawTimestamp = env.aliceStakeTimestamp + ONE_DAY * 3;
+                await time.setNextBlockTimestamp(aliceRequestWithdrawTimestamp);
+                await env.stakingInst.connect(env.alice).requestWithdraw(env.aliceAmountToStake);
+
+                await expect(env.stakingInst.finalizeWithdraw(1))
+                    .revertedWithCustomError(env.stakingInst, "NotAllowedUser")
+                    .withArgs(env.deployer.address, env.alice.address);
+            });
+
+            it("Should revert when withdrawal request isn't finalizable yet", async () => {
+                const env = await loadFixture(prepareEnvWithAliceStakeWithoutDonation);
+
+                const aliceRequestWithdrawTimestamp = env.aliceStakeTimestamp + ONE_DAY * 3;
+                await time.setNextBlockTimestamp(aliceRequestWithdrawTimestamp);
+                await env.stakingInst.connect(env.alice).requestWithdraw(env.aliceAmountToStake);
+
+                const aliceFinalizeRequestTimestamp = aliceRequestWithdrawTimestamp + ONE_DAY;
+                await time.setNextBlockTimestamp(aliceFinalizeRequestTimestamp);
+                await expect(env.stakingInst.connect(env.alice).finalizeWithdraw(1))
+                    .revertedWithCustomError(env.stakingInst, "WithdrawIdNotFinalizableYet")
+                    .withArgs(
+                        aliceFinalizeRequestTimestamp,
+                        aliceRequestWithdrawTimestamp + COOLING_PERIOD
+                    );
+            });
+        });
+    });
+
     describe("{availableRewardsToClaim} function", () => {
         it("Call with no available balance", async () => {
-            const env = await loadFixture(prepareEnv);
+            const env = await loadFixture(prepareEnvWithAliceStakeWithoutDonation);
 
-            await env.stakingInst.receiveExcessiveBalance(ethers.constants.MaxUint256);
-
-            const stakeTimestamp = env.deployTimestamp + ONE_DAY;
-            const stakeAmount = env.oneToken.mul(100);
-            await env.erc20Inst.connect(env.alice).mint(stakeAmount);
-            await env.erc20Inst.connect(env.alice).approve(env.stakingInst.address, stakeAmount);
-            await time.setNextBlockTimestamp(stakeTimestamp);
-            await env.stakingInst.connect(env.alice).stake(stakeAmount);
-
-            const callTime = stakeTimestamp + ONE_DAY * 2;
+            const callTime = env.aliceStakeTimestamp + ONE_DAY * 2;
             await time.setNextBlockTimestamp(callTime);
             await mine();
 
@@ -778,29 +836,22 @@ describe("Tests of the AtomicStaking contract", () => {
         });
 
         it("Call with enough available balance", async () => {
-            const env = await loadFixture(prepareEnv);
+            const env = await loadFixture(prepareEnvWithAliceStake);
 
-            const stakeTimestamp = env.deployTimestamp + ONE_DAY;
-            const stakeAmount = env.oneToken.mul(100);
-            await env.erc20Inst.connect(env.alice).mint(stakeAmount);
-            await env.erc20Inst.connect(env.alice).approve(env.stakingInst.address, stakeAmount);
-            await time.setNextBlockTimestamp(stakeTimestamp);
-            await env.stakingInst.connect(env.alice).stake(stakeAmount);
-
-            const callTime = stakeTimestamp + ONE_DAY * 2;
+            const callTime = env.aliceStakeTimestamp + ONE_DAY * 2;
             await time.setNextBlockTimestamp(callTime);
             await mine();
 
             const newRatePerStaking = RATE_PRECISION.add(
-                RATE_PRECISION.mul(callTime - stakeTimestamp)
+                RATE_PRECISION.mul(callTime - env.aliceStakeTimestamp)
                     .mul(env.apr)
                     .div(ONE_YEAR)
                     .div(PERCENT_DENOMINATOR)
             );
-            const returnValue = stakeAmount
+            const returnValue = env.aliceAmountToStake
                 .mul(newRatePerStaking)
                 .div(RATE_PRECISION)
-                .sub(stakeAmount);
+                .sub(env.aliceAmountToStake);
 
             expect(await env.stakingInst.availableRewardsToClaim(env.alice.address)).equals(
                 returnValue
@@ -808,27 +859,20 @@ describe("Tests of the AtomicStaking contract", () => {
         });
 
         it("Call with almost enough available balance", async () => {
-            const env = await loadFixture(prepareEnv);
+            const env = await loadFixture(prepareEnvWithAliceStake);
 
-            const stakeTimestamp = env.deployTimestamp + ONE_DAY;
-            const stakeAmount = env.oneToken.mul(100);
-            await env.erc20Inst.connect(env.alice).mint(stakeAmount);
-            await env.erc20Inst.connect(env.alice).approve(env.stakingInst.address, stakeAmount);
-            await time.setNextBlockTimestamp(stakeTimestamp);
-            await env.stakingInst.connect(env.alice).stake(stakeAmount);
-
-            const callTime = stakeTimestamp + ONE_DAY * 2;
+            const callTime = env.aliceStakeTimestamp + ONE_DAY * 2;
 
             const newRatePerStaking = RATE_PRECISION.add(
-                RATE_PRECISION.mul(callTime - stakeTimestamp)
+                RATE_PRECISION.mul(callTime - env.aliceStakeTimestamp)
                     .mul(env.apr)
                     .div(ONE_YEAR)
                     .div(PERCENT_DENOMINATOR)
             );
-            const returnValue = stakeAmount
+            const returnValue = env.aliceAmountToStake
                 .mul(newRatePerStaking)
                 .div(RATE_PRECISION)
-                .sub(stakeAmount);
+                .sub(env.aliceAmountToStake);
 
             await env.stakingInst.receiveExcessiveBalance(ethers.constants.MaxUint256);
             const donationAmount = returnValue.div(3);
@@ -923,21 +967,12 @@ describe("Tests of the AtomicStaking contract", () => {
             });
 
             it("Set new value with stakes", async () => {
-                const env = await loadFixture(prepareEnv);
-
-                const stakeTimestamp = env.deployTimestamp + ONE_DAY;
-                const stakeAmount = env.oneToken.mul(100);
-                await env.erc20Inst.connect(env.alice).mint(stakeAmount);
-                await env.erc20Inst
-                    .connect(env.alice)
-                    .approve(env.stakingInst.address, stakeAmount);
-                await time.setNextBlockTimestamp(stakeTimestamp);
-                await env.stakingInst.connect(env.alice).stake(stakeAmount);
+                const env = await loadFixture(prepareEnvWithAliceStake);
 
                 const newValue = env.apr + 1;
-                const setAprTimestamp = stakeTimestamp + ONE_DAY;
+                const setAprTimestamp = env.aliceStakeTimestamp + ONE_DAY;
                 const newRatePerStaking = RATE_PRECISION.add(
-                    RATE_PRECISION.mul(setAprTimestamp - stakeTimestamp)
+                    RATE_PRECISION.mul(setAprTimestamp - env.aliceStakeTimestamp)
                         .mul(env.apr)
                         .div(ONE_YEAR)
                         .div(PERCENT_DENOMINATOR)
@@ -994,9 +1029,7 @@ describe("Tests of the AtomicStaking contract", () => {
 
         describe("{receiveExcessiveBalance} function", () => {
             it("Call with no available balance", async () => {
-                const env = await loadFixture(prepareEnv);
-
-                await env.stakingInst.receiveExcessiveBalance(ethers.constants.MaxUint256);
+                const env = await loadFixture(prepareEnvWithoutDonation);
 
                 const balanceBefore = await env.erc20Inst.balanceOf(env.stakingInst.address);
 

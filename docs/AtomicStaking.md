@@ -164,13 +164,45 @@ some or all tokens that were supposed to be distrubuted to the stakers as their 
 | user | address | The admin that withdrawn tokens |
 | withdrawnAmount | uint256 | Withdrawn amount |
 
+### WithdrawRequested
+
+```solidity
+event WithdrawRequested(address user, uint256 amount, uint256 withdrawId)
+```
+
+Event is emmited when a user requests withdrawal request. Withdrawn tokens are locked for a cooling period.
+
+#### Parameters
+
+| Name | Type | Description |
+| ---- | ---- | ----------- |
+| user | address | A user's address |
+| amount | uint256 | Withdraw amount |
+| withdrawId | uint256 | Withdraw request identifier |
+
+### WithdrawIdFinalized
+
+```solidity
+event WithdrawIdFinalized(address user, uint256 amount, uint256 withdrawId)
+```
+
+Event is emmited when a user finalized his tokens.
+
+#### Parameters
+
+| Name | Type | Description |
+| ---- | ---- | ----------- |
+| user | address | A user's address |
+| amount | uint256 | Finalized amount |
+| withdrawId | uint256 | Withdraw request identifier |
+
 ### AddressZero
 
 ```solidity
 error AddressZero()
 ```
 
-A transaction reverts with this error when a zero address is passed as an argument to a function.
+A transaction reverted with this error when a zero address is passed as an argument to a function.
 
 ### LessThanMinAmount
 
@@ -178,7 +210,7 @@ A transaction reverts with this error when a zero address is passed as an argume
 error LessThanMinAmount(uint256 suppliedAmount, uint256 minStakeAmount)
 ```
 
-A transaction reverts with this error when a user tries to stake the token, but
+A transaction reverted with this error when a user tries to stake the token, but
 staked amount `suppliedAmount` is less than minimum allowed amount `minStakeAmount`.
 
 #### Parameters
@@ -194,7 +226,7 @@ staked amount `suppliedAmount` is less than minimum allowed amount `minStakeAmou
 error TheSameValue()
 ```
 
-A transaction reverts with this error when an admin tries to change a global variable to the same value.
+A transaction reverted with this error when an admin tries to change a global variable to the same value.
 
 ### TooBigValue
 
@@ -202,7 +234,7 @@ A transaction reverts with this error when an admin tries to change a global var
 error TooBigValue(uint256 passedValue, uint256 maxValue)
 ```
 
-A transaction reverts with this error when a user passes too big argument.
+A transaction reverted with this error when a user passes too big argument.
 
 #### Parameters
 
@@ -210,6 +242,38 @@ A transaction reverts with this error when a user passes too big argument.
 | ---- | ---- | ----------- |
 | passedValue | uint256 | The value that the user passed |
 | maxValue | uint256 | The maximum allowed value |
+
+### ZeroValue
+
+```solidity
+error ZeroValue()
+```
+
+A transaction reverted with this error when a user passes zero argument.
+
+### NoSuchWithdrawId
+
+```solidity
+error NoSuchWithdrawId(uint256 withdrawId)
+```
+
+A transaction reverted with this error when a user tries to finalize a non-existent withdrawal request.
+
+### NotAllowedUser
+
+```solidity
+error NotAllowedUser(address sender, address allowedUser)
+```
+
+A transaction reverted with this error when a user tries to finilize not his withdrawal request.
+
+### WithdrawIdNotFinalizableYet
+
+```solidity
+error WithdrawIdNotFinalizableYet(uint256 timestampNow, uint256 coolingPeriodEnd)
+```
+
+A transaction reverted with this error when a user tries to finilize not finalizable withdrawal request.
 
 ### constructor
 
@@ -233,6 +297,40 @@ Function for a user to stake his tokens.
 | Name | Type | Description |
 | ---- | ---- | ----------- |
 | amount | uint256 | Amount to stake |
+
+### requestWithdraw
+
+```solidity
+function requestWithdraw(uint256 amount) external returns (uint256 withdrawId)
+```
+
+Function for a user to request a withdraw of his tokens. Withdrawn tokens are locked for a cooling period.
+
+#### Parameters
+
+| Name | Type | Description |
+| ---- | ---- | ----------- |
+| amount | uint256 | Amount a user wants to withdraw |
+
+#### Return Values
+
+| Name | Type | Description |
+| ---- | ---- | ----------- |
+| withdrawId | uint256 | Id of a withdrawal request. This id should be used to fully withdraw cooled tokens. |
+
+### finalizeWithdraw
+
+```solidity
+function finalizeWithdraw(uint256 withdrawId) external
+```
+
+Function for a user to finalize a withdrawn of his tokens.
+
+#### Parameters
+
+| Name | Type | Description |
+| ---- | ---- | ----------- |
+| withdrawId | uint256 | A withdraw id that should be finalized |
 
 ### claimRewards
 
@@ -331,7 +429,7 @@ Function to get amount of tokens that are available to claim right now.
 function stakeStates(address user) external view returns (struct IAtomicStaking.StakeState stakeState)
 ```
 
-The mapping that connects users' addresses with their stake amount.
+The mapping that connects users' addresses with their stake state.
 
 _A separate getter is needed to specify in the interface that
 the struct `StakeState` is the return type, not just the tuple of variables.
@@ -348,4 +446,28 @@ Without this getter the interface should have a tuple of variables as the return
 | Name | Type | Description |
 | ---- | ---- | ----------- |
 | stakeState | struct IAtomicStaking.StakeState | The `StakeState` structure that holds information about the user's stake |
+
+### withdrawStates
+
+```solidity
+function withdrawStates(uint256 withdrawId) external view returns (struct IAtomicStaking.WithdrawState withdrawState)
+```
+
+The mapping that connects withdraw id with their withdraw state.
+
+_A separate getter is needed to specify in the interface that
+the struct `WithdrawState` is the return type, not just the tuple of variables.
+Without this getter the interface should have a tuple of variables as the return type of this function._
+
+#### Parameters
+
+| Name | Type | Description |
+| ---- | ---- | ----------- |
+| withdrawId | uint256 | A withdraw id, that the `requestWithdraw` function returned |
+
+#### Return Values
+
+| Name | Type | Description |
+| ---- | ---- | ----------- |
+| withdrawState | struct IAtomicStaking.WithdrawState | The `WithdrawState` structure that holds information about the user's withdraw |
 

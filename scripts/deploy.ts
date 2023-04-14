@@ -10,7 +10,7 @@ async function main() {
     await deployAndVerify("AtomicStaking", [
         config.deploy.token.ethereumMainnet,
         config.deploy.minStakeAmount,
-        config.deploy.apr
+        config.deploy.apr,
     ]);
 }
 

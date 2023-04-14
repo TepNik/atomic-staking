@@ -10,6 +10,11 @@ interface IAtomicStaking {
         uint256 claimedAmount;
         uint256 contractDeptToUser;
     }
+    struct WithdrawState {
+        address user;
+        uint64 withdrawTimestamp;
+        uint256 amount;
+    }
 
     /* PUBLIC STATE VARIABLES */
 
@@ -35,10 +40,14 @@ interface IAtomicStaking {
     /// @param amount Amount to stake
     function stake(uint256 amount) external;
 
-    /// @notice Function for a user to withdraw his tokens. Withdrawn tokens are locked for a cooling period.
+    /// @notice Function for a user to request a withdraw of his tokens. Withdrawn tokens are locked for a cooling period.
     /// @param amount Amount a user wants to withdraw
-    /// @return id Id of a withdrawal request. This id should be used to fully withdraw cooled tokens.
-    //function withdraw(uint256 amount) external returns(uint256 id);
+    /// @return withdrawId Id of a withdrawal request. This id should be used to fully withdraw cooled tokens.
+    function requestWithdraw(uint256 amount) external returns (uint256 withdrawId);
+
+    /// @notice Function for a user to finalize a withdrawn of his tokens.
+    /// @param withdrawId A withdraw id that should be finalized
+    function finalizeWithdraw(uint256 withdrawId) external;
 
     /// @notice Function for a user to claim his rewards.
     function claimRewards() external;
@@ -72,8 +81,15 @@ interface IAtomicStaking {
     /// @return rewardsToClaim Amount of tokens that are available to claim right now
     function availableRewardsToClaim(address user) external view returns (uint256 rewardsToClaim);
 
-    /// @notice The mapping that connects users' addresses with their stake amount.
+    /// @notice The mapping that connects users' addresses with their stake state.
     /// @param user A user's address
     /// @return stakeState The `StakeState` structure that holds information about the user's stake
     function stakeStates(address user) external view returns (StakeState memory stakeState);
+
+    /// @notice The mapping that connects withdraw id with their withdraw state.
+    /// @param withdrawId A withdraw id, that the `requestWithdraw` function returned
+    /// @return withdrawState The `WithdrawState` structure that holds information about the user's withdraw
+    function withdrawStates(
+        uint256 withdrawId
+    ) external view returns (WithdrawState memory withdrawState);
 }

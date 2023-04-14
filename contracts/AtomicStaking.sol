@@ -27,6 +27,7 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
     /// @inheritdoc IAtomicStaking
     uint256 public override minStakeAmount;
 
+    /// @inheritdoc IAtomicStaking
     uint256 public override apr;
 
     /* PRIVATE VARIABLES */
@@ -43,8 +44,9 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
     // rate info
     uint256 private _ratePerStaking = _RATE_PRECISION;
     uint256 private _lastRateUpdateTimestamp;
-
-    //mapping(address => StakeState) private override _stakeStates;
+    // withdraw stats
+    uint256 private _lastWithdrawId;
+    mapping(uint256 => WithdrawState) private _withdrawStates;
 
     /* EVENTS */
 
@@ -90,21 +92,41 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
     /// @param withdrawnAmount Withdrawn amount
     event ExcessiveBalanceWithdrawn(address indexed user, uint256 withdrawnAmount);
 
+    /// @notice Event is emmited when a user requests withdrawal request. Withdrawn tokens are locked for a cooling period.
+    /// @param user A user's address
+    /// @param amount Withdraw amount
+    /// @param withdrawId Withdraw request identifier
+    event WithdrawRequested(address indexed user, uint256 amount, uint256 withdrawId);
+
+    /// @notice Event is emmited when a user finalized his tokens.
+    /// @param user A user's address
+    /// @param amount Finalized amount
+    /// @param withdrawId Withdraw request identifier
+    event WithdrawIdFinalized(address indexed user, uint256 amount, uint256 withdrawId);
+
     /* ERRORS */
 
-    /// @notice A transaction reverts with this error when a zero address is passed as an argument to a function.
+    /// @notice A transaction reverted with this error when a zero address is passed as an argument to a function.
     error AddressZero();
-    /// @notice A transaction reverts with this error when a user tries to stake the token, but
+    /// @notice A transaction reverted with this error when a user tries to stake the token, but
     /// staked amount `suppliedAmount` is less than minimum allowed amount `minStakeAmount`.
     /// @param suppliedAmount Amount of the token that a user tried to stake
     /// @param minStakeAmount Minimum amount of the token that are required for a stake
     error LessThanMinAmount(uint256 suppliedAmount, uint256 minStakeAmount);
-    /// @notice A transaction reverts with this error when an admin tries to change a global variable to the same value.
+    /// @notice A transaction reverted with this error when an admin tries to change a global variable to the same value.
     error TheSameValue();
-    /// @notice A transaction reverts with this error when a user passes too big argument.
+    /// @notice A transaction reverted with this error when a user passes too big argument.
     /// @param passedValue The value that the user passed
     /// @param maxValue The maximum allowed value
     error TooBigValue(uint256 passedValue, uint256 maxValue);
+    /// @notice A transaction reverted with this error when a user passes zero argument.
+    error ZeroValue();
+    /// @notice A transaction reverted with this error when a user tries to finalize a non-existent withdrawal request.
+    error NoSuchWithdrawId(uint256 withdrawId);
+    /// @notice A transaction reverted with this error when a user tries to finilize not his withdrawal request.
+    error NotAllowedUser(address sender, address allowedUser);
+    /// @notice A transaction reverted with this error when a user tries to finilize not finalizable withdrawal request.
+    error WithdrawIdNotFinalizableYet(uint256 timestampNow, uint256 coolingPeriodEnd);
 
     /// @dev Deployer of the contract will have `DEFAULT_ADMIN_ROLE` role.
     /// Also, the `_apr` argument can't be bigger than `_PERCENT_DENOMINATOR` to prevent too big values.
@@ -159,9 +181,11 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
     }
 
     /// @inheritdoc IAtomicStaking
-    /* function withdraw(uint256 amount) external override nonReentrant returns(uint256 id) {
+    function requestWithdraw(
+        uint256 amount
+    ) external override nonReentrant returns (uint256 withdrawId) {
         if (amount == 0) {
-
+            revert ZeroValue();
         }
 
         uint256 stakeAmount = _stakeStates[msg.sender].stakeAmount;
@@ -171,14 +195,44 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
 
         _collectRewards(msg.sender);
 
+        withdrawId = ++_lastWithdrawId;
+
         uint256 newStakeAmount = stakeAmount - amount;
         _stakeStates[msg.sender].stakeAmount = newStakeAmount;
         _stakeStates[msg.sender].claimedAmount =
             (newStakeAmount * _ratePerStaking) /
             _RATE_PRECISION;
 
-        _totalStaked -= amount;
-    } */
+        _withdrawStates[withdrawId].user = msg.sender;
+        _withdrawStates[withdrawId].withdrawTimestamp = uint64(block.timestamp);
+        _withdrawStates[withdrawId].amount = amount;
+
+        emit WithdrawRequested(msg.sender, amount, withdrawId);
+    }
+
+    /// @inheritdoc IAtomicStaking
+    function finalizeWithdraw(uint256 withdrawId) external override nonReentrant {
+        WithdrawState memory withdrawState = _withdrawStates[withdrawId];
+        delete _withdrawStates[withdrawId];
+        if (withdrawState.withdrawTimestamp == 0) {
+            revert NoSuchWithdrawId(withdrawId);
+        }
+        if (withdrawState.user != msg.sender) {
+            revert NotAllowedUser(msg.sender, withdrawState.user);
+        }
+        if (withdrawState.withdrawTimestamp + _COOLING_PERIOD > block.timestamp) {
+            revert WithdrawIdNotFinalizableYet(
+                block.timestamp,
+                withdrawState.withdrawTimestamp + _COOLING_PERIOD
+            );
+        }
+
+        _totalStaked -= withdrawState.amount;
+
+        TOKEN.safeTransfer(msg.sender, withdrawState.amount);
+
+        emit WithdrawIdFinalized(msg.sender, withdrawState.amount, withdrawId);
+    }
 
     /// @inheritdoc IAtomicStaking
     function claimRewards() external nonReentrant {
@@ -278,6 +332,16 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
         address user
     ) external view override returns (StakeState memory stakeState) {
         return _stakeStates[user];
+    }
+
+    /// @inheritdoc IAtomicStaking
+    /// @dev A separate getter is needed to specify in the interface that
+    /// the struct `WithdrawState` is the return type, not just the tuple of variables.
+    /// Without this getter the interface should have a tuple of variables as the return type of this function.
+    function withdrawStates(
+        uint256 withdrawId
+    ) external view override returns (WithdrawState memory withdrawState) {
+        return _withdrawStates[withdrawId];
     }
 
     /* PRIVATE FUNCTIONS */

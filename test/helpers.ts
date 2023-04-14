@@ -1,12 +1,66 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 import "../typechain-types";
 
 import { config } from "../config";
-import { Ten } from "./constants";
+import { Ten, ONE_DAY } from "./constants";
+
+export async function prepareEnvWithAliceStakeWithoutDonation() {
+    const prevEnv = await loadFixture(prepareEnvWithoutDonation);
+
+    const aliceStakeTimestamp = prevEnv.deployTimestamp + ONE_DAY;
+    const aliceAmountToStake = prevEnv.oneToken.mul(100);
+    await prevEnv.erc20Inst.connect(prevEnv.alice).mint(aliceAmountToStake);
+    await prevEnv.erc20Inst
+        .connect(prevEnv.alice)
+        .approve(prevEnv.stakingInst.address, aliceAmountToStake);
+    await time.setNextBlockTimestamp(aliceStakeTimestamp);
+    await prevEnv.stakingInst.connect(prevEnv.alice).stake(aliceAmountToStake);
+
+    return {
+        ...prevEnv,
+
+        aliceStakeTimestamp,
+        aliceAmountToStake,
+    };
+}
+
+export async function prepareEnvWithAliceStake() {
+    const prevEnv = await loadFixture(prepareEnv);
+
+    const aliceStakeTimestamp = prevEnv.deployTimestamp + ONE_DAY;
+    const aliceAmountToStake = prevEnv.oneToken.mul(100);
+    await prevEnv.erc20Inst.connect(prevEnv.alice).mint(aliceAmountToStake);
+    await prevEnv.erc20Inst
+        .connect(prevEnv.alice)
+        .approve(prevEnv.stakingInst.address, aliceAmountToStake);
+    await time.setNextBlockTimestamp(aliceStakeTimestamp);
+    await prevEnv.stakingInst.connect(prevEnv.alice).stake(aliceAmountToStake);
+
+    return {
+        ...prevEnv,
+
+        aliceStakeTimestamp,
+        aliceAmountToStake,
+    };
+}
 
 export async function prepareEnv() {
+    const prevEnv = await loadFixture(prepareEnvWithoutDonation);
+
+    const donatedTokens = prevEnv.oneToken.mul(100_000);
+    await prevEnv.erc20Inst.mint(donatedTokens);
+    await prevEnv.erc20Inst.approve(prevEnv.stakingInst.address, donatedTokens);
+    await prevEnv.stakingInst.donateTokensToRewards(donatedTokens);
+
+    return {
+        ...prevEnv,
+        donatedTokens,
+    };
+}
+
+export async function prepareEnvWithoutDonation() {
     const prevEnv = await loadFixture(prepareEnvWithoutStakingDeployment);
 
     const stakingInst = await prevEnv.StakingFactory.deploy(
@@ -23,11 +77,6 @@ export async function prepareEnv() {
 
     await stakingInst.grantRole(MANAGER_ROLE, prevEnv.manager.address);
 
-    const donatedTokens = prevEnv.oneToken.mul(100_000);
-    await prevEnv.erc20Inst.mint(donatedTokens);
-    await prevEnv.erc20Inst.approve(stakingInst.address, donatedTokens);
-    await stakingInst.donateTokensToRewards(donatedTokens);
-
     return {
         ...prevEnv,
 
@@ -36,7 +85,6 @@ export async function prepareEnv() {
 
         stakingInst,
         deployTimestamp,
-        donatedTokens,
     };
 }
 
