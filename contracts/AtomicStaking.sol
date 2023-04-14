@@ -30,6 +30,12 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
     /// @inheritdoc IAtomicStaking
     uint256 public override apr;
 
+    /// @inheritdoc IAtomicStaking
+    uint256 public override totalStaked;
+
+    /// @inheritdoc IAtomicStaking
+    uint256 public override lastRateUpdateTimestamp;
+
     /* PRIVATE VARIABLES */
 
     uint256 private constant _COOLING_PERIOD = 10 days;
@@ -40,10 +46,8 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
 
     // stake stats
     mapping(address => StakeState) private _stakeStates;
-    uint256 private _totalStaked;
     // rate info
     uint256 private _ratePerStaking = _RATE_PRECISION;
-    uint256 private _lastRateUpdateTimestamp;
     // withdraw stats
     uint256 private _lastWithdrawId;
     mapping(uint256 => WithdrawState) private _withdrawStates;
@@ -173,7 +177,7 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
             (newStakedAmount * _ratePerStaking) /
             _RATE_PRECISION;
 
-        _totalStaked += amount;
+        totalStaked += amount;
 
         TOKEN.safeTransferFrom(msg.sender, address(this), amount);
 
@@ -227,7 +231,7 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
             );
         }
 
-        _totalStaked -= withdrawState.amount;
+        totalStaked -= withdrawState.amount;
 
         TOKEN.safeTransfer(msg.sender, withdrawState.amount);
 
@@ -290,12 +294,12 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
         }
 
         uint256 totalBalance = TOKEN.balanceOf(address(this));
-        uint256 totalStaked = _totalStaked;
-        if (totalBalance <= totalStaked) {
+        uint256 _totalStaked = totalStaked;
+        if (totalBalance <= _totalStaked) {
             return;
         }
 
-        uint256 possibleToWithdraw = totalBalance - totalStaked;
+        uint256 possibleToWithdraw = totalBalance - _totalStaked;
         uint256 toWithdraw = possibleToWithdraw <= amount ? possibleToWithdraw : amount;
 
         TOKEN.safeTransfer(msg.sender, toWithdraw);
@@ -308,15 +312,15 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
     /// @inheritdoc IAtomicStaking
     function availableRewardsToClaim(address user) external view override returns (uint256) {
         uint256 totalBalance = TOKEN.balanceOf(address(this));
-        uint256 totalStaked = _totalStaked;
-        if (totalBalance <= totalStaked) {
+        uint256 _totalStaked = totalStaked;
+        if (totalBalance <= _totalStaked) {
             return 0;
         }
 
         (uint256 earnedRewards, ) = _earnedRewards(user);
         uint256 totalRewards = _stakeStates[user].contractDeptToUser + earnedRewards;
 
-        uint256 availableBalance = totalBalance - totalStaked;
+        uint256 availableBalance = totalBalance - _totalStaked;
         if (totalRewards <= availableBalance) {
             return totalRewards;
         } else {
@@ -347,9 +351,8 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
     /* PRIVATE FUNCTIONS */
 
     function _updateRate() private {
-        uint256 totalStaked = _totalStaked;
         if (totalStaked == 0) {
-            _lastRateUpdateTimestamp = block.timestamp;
+            lastRateUpdateTimestamp = block.timestamp;
             return;
         }
 
@@ -357,7 +360,7 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
         if (needUpdate) {
             _ratePerStaking = newRatePerStaking;
 
-            _lastRateUpdateTimestamp = block.timestamp;
+            lastRateUpdateTimestamp = block.timestamp;
 
             emit RateUpdated(newRatePerStaking);
         }
@@ -375,8 +378,8 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
             }
 
             uint256 totalBalance = TOKEN.balanceOf(address(this));
-            uint256 totalStaked = _totalStaked;
-            if (totalBalance <= totalStaked) {
+            uint256 _totalStaked = totalStaked;
+            if (totalBalance <= _totalStaked) {
                 if (totalRewards != contractDeptToUser) {
                     _stakeStates[user].contractDeptToUser = totalRewards;
 
@@ -385,7 +388,7 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
                 return;
             }
 
-            uint256 availableBalance = totalBalance - totalStaked;
+            uint256 availableBalance = totalBalance - _totalStaked;
             if (availableBalance < totalRewards) {
                 uint256 newContractDeptToUser = totalRewards - availableBalance;
                 if (newContractDeptToUser != contractDeptToUser) {
@@ -440,14 +443,14 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
         view
         returns (uint256 newRatePerStaking, bool needUpdate)
     {
-        uint256 lastRateUpdateTimestamp = _lastRateUpdateTimestamp;
-        if (lastRateUpdateTimestamp == block.timestamp) {
+        uint256 _lastRateUpdateTimestamp = lastRateUpdateTimestamp;
+        if (_lastRateUpdateTimestamp == block.timestamp) {
             return (_ratePerStaking, false);
         } else {
             uint256 oldRatePerStaking = _ratePerStaking;
             newRatePerStaking =
                 oldRatePerStaking +
-                (oldRatePerStaking * (block.timestamp - lastRateUpdateTimestamp) * apr) /
+                (oldRatePerStaking * (block.timestamp - _lastRateUpdateTimestamp) * apr) /
                 (_ONE_YEAR * _PERCENT_DENOMINATOR);
             return (newRatePerStaking, true);
         }

@@ -25,7 +25,7 @@ describe("Tests of the AtomicStaking contract", () => {
             const env = await loadFixture(prepareEnv);
 
             expect(await env.stakingInst.TOKEN()).equals(env.erc20Inst.address);
-            expect(await env.stakingInst.minStakeAmount()).equals(config.deploy.minStakeAmount);
+            expect(await env.stakingInst.minStakeAmount()).equals(env.minStakeAmount);
 
             expect(await env.stakingInst.hasRole(env.DEFAULT_ADMIN_ROLE, env.deployer.address))
                 .true;

@@ -42,6 +42,22 @@ The APR of the staking. The denominator is `100_00`.
 _In case of chaging of the APR, this change doesn't affect the rewards that the users earned before it.
 It only affects new earnings._
 
+### totalStaked
+
+```solidity
+uint256 totalStaked
+```
+
+Amount of the tokens that users have staked.
+
+### lastRateUpdateTimestamp
+
+```solidity
+uint256 lastRateUpdateTimestamp
+```
+
+Timestamp of the contract's last update.
+
 ### TokenStaked
 
 ```solidity

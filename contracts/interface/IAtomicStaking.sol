@@ -34,6 +34,12 @@ interface IAtomicStaking {
     /// It only affects new earnings.
     function apr() external view returns (uint256);
 
+    /// @notice Amount of the tokens that users have staked.
+    function totalStaked() external view returns (uint256);
+
+    /// @notice Timestamp of the contract's last update.
+    function lastRateUpdateTimestamp() external view returns (uint256);
+
     /* USERS' FUNCTIONS */
 
     /// @notice Function for a user to stake his tokens.
