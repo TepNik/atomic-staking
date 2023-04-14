@@ -782,6 +782,11 @@ describe("Tests of the AtomicStaking contract", () => {
 
             const balanceAfter = await env.erc20Inst.balanceOf(env.stakingInst.address);
             expect(balanceBefore.sub(balanceAfter)).equals(aliceWithdrawAmount);
+
+            const withdrawState = await env.stakingInst.withdrawStates(1);
+            expect(withdrawState.user).equals(ethers.constants.AddressZero);
+            expect(withdrawState.withdrawTimestamp).equals(0);
+            expect(withdrawState.amount).equals(0);
         });
 
         describe("Revert", () => {
