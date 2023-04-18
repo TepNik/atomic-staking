@@ -487,3 +487,23 @@ Without this getter the interface should have a tuple of variables as the return
 | ---- | ---- | ----------- |
 | withdrawState | struct IAtomicStaking.WithdrawState | The `WithdrawState` structure that holds information about the user's withdraw |
 
+### usersWithdrawIds
+
+```solidity
+function usersWithdrawIds(address user) external view returns (uint256[] withdrawIds)
+```
+
+The mapping that connects user's address with his withdraw ids.
+
+#### Parameters
+
+| Name | Type | Description |
+| ---- | ---- | ----------- |
+| user | address | A user's address |
+
+#### Return Values
+
+| Name | Type | Description |
+| ---- | ---- | ----------- |
+| withdrawIds | uint256[] | An array that contains all withdraw ids of a user |
+

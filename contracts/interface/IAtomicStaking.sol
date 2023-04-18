@@ -98,4 +98,9 @@ interface IAtomicStaking {
     function withdrawStates(
         uint256 withdrawId
     ) external view returns (WithdrawState memory withdrawState);
+
+    /// @notice The mapping that connects user's address with his withdraw ids.
+    /// @param user A user's address
+    /// @return withdrawIds An array that contains all withdraw ids of a user
+    function usersWithdrawIds(address user) external view returns (uint256[] memory withdrawIds);
 }

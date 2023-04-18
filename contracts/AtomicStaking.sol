@@ -5,6 +5,7 @@ pragma solidity 0.8.19;
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -15,6 +16,7 @@ import {IAtomicStaking} from "./interface/IAtomicStaking.sol";
 /// @dev This contract can also be used for other ERC20 tokens as well.
 contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
     using SafeERC20 for IERC20;
+    using EnumerableSet for EnumerableSet.UintSet;
 
     /* PUBLIC STATE VARIABLES */
 
@@ -51,6 +53,8 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
     // withdraw stats
     uint256 private _lastWithdrawId;
     mapping(uint256 => WithdrawState) private _withdrawStates;
+
+    mapping(address => EnumerableSet.UintSet) private _usersWithdrawIds;
 
     /* EVENTS */
 
@@ -211,6 +215,8 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
         _withdrawStates[withdrawId].withdrawTimestamp = uint64(block.timestamp);
         _withdrawStates[withdrawId].amount = amount;
 
+        assert(_usersWithdrawIds[msg.sender].add(withdrawId));
+
         emit WithdrawRequested(msg.sender, amount, withdrawId);
     }
 
@@ -232,6 +238,8 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
         }
 
         totalStaked -= withdrawState.amount;
+
+        assert(_usersWithdrawIds[msg.sender].remove(withdrawId));
 
         TOKEN.safeTransfer(msg.sender, withdrawState.amount);
 
@@ -346,6 +354,13 @@ contract AtomicStaking is AccessControl, ReentrancyGuard, IAtomicStaking {
         uint256 withdrawId
     ) external view override returns (WithdrawState memory withdrawState) {
         return _withdrawStates[withdrawId];
+    }
+
+    /// @inheritdoc IAtomicStaking
+    function usersWithdrawIds(
+        address user
+    ) external view override returns (uint256[] memory withdrawIds) {
+        return _usersWithdrawIds[user].values();
     }
 
     /* PRIVATE FUNCTIONS */

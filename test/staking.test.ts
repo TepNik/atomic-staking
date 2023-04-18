@@ -662,6 +662,8 @@ describe("Tests of the AtomicStaking contract", () => {
             expect(aliceStakeState.claimedAmount).equals(aliceClaimedAmount);
             expect(aliceStakeState.contractDeptToUser).equals(0);
 
+            expect(await env.stakingInst.usersWithdrawIds(env.alice.address)).deep.equal([1]);
+
             const bobWithdrawTimestamp = aliceWithdrawTimestamp + ONE_DAY * 3;
             const bobWithdrawAmount = bobAmountToStake.div(2);
             const bobWithdrawRatePerStaking = aliceWithdrawRatePerStaking.add(
@@ -694,6 +696,8 @@ describe("Tests of the AtomicStaking contract", () => {
             expect(bobStakeState.stakeAmount).equals(bobAmountToStake.sub(bobWithdrawAmount));
             expect(bobStakeState.claimedAmount).equals(bobClaimedAmount);
             expect(bobStakeState.contractDeptToUser).equals(0);
+
+            expect(await env.stakingInst.usersWithdrawIds(env.bob.address)).deep.equal([2]);
         });
 
         it("Test rewards", async () => {
@@ -787,6 +791,8 @@ describe("Tests of the AtomicStaking contract", () => {
             expect(withdrawState.user).equals(ethers.constants.AddressZero);
             expect(withdrawState.withdrawTimestamp).equals(0);
             expect(withdrawState.amount).equals(0);
+
+            expect(await env.stakingInst.usersWithdrawIds(env.alice.address)).deep.equal([]);
         });
 
         describe("Revert", () => {
