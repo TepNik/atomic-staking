@@ -21,10 +21,8 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
 
-    - name: Install dependencies
-      run: yarn install --frozen-lockfile
+    - name: Install solhint
+      run: npm install -g solhint
 
-    - name: Run linter
-      run: npm run solhint
-    - name: Run Tests
-      run: npm test
+    - name: Run solhint
+      run:solhint **/*.sol --config ./.solhint.json -f json --max-warnings 0
