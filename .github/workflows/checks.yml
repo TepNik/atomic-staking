@@ -25,4 +25,4 @@ jobs:
       run: npm install -g solhint
 
     - name: Run solhint
-      run:solhint **/*.sol --config ./.solhint.json -f json --max-warnings 0
+      run: solhint **/*.sol --config ./.solhint.json -f json --max-warnings 0
