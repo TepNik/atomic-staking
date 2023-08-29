@@ -7,7 +7,6 @@ coverage.json
 flattened
 data
 package-lock.json
-yarn.lock
 yarn-error.log
 crytic-export/
 corpusDir/
