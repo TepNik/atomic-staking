@@ -7,7 +7,7 @@
         "test": "npm run prettier && npx hardhat test",
         "prettier": "prettier --write './**/*.sol' './**/*.js' './**/*.ts' './**/*.json' './**/*.md'",
         "coverage": "npm run prettier && npx hardhat coverage --solcoverjs ./.solcover.js",
-        "solhint": "solhint 'contracts/**/*.sol'"
+        "solhint": "solhint **/*.sol --config ./.solhint.json -f json --max-warnings 0"
     },
     "keywords": [],
     "author": "",
