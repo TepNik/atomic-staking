@@ -1,3 +1,4 @@
 node_modules/
 contracts/tests/
 contracts/interface/
+interface/IAtomicStaking.sol
